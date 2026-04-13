@@ -1,5 +1,3 @@
-export const runtime = 'experimental-edge'
-
 import { type NextRequest, NextResponse } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 
