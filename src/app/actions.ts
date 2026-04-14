@@ -27,6 +27,7 @@ export type SaveCalculatedPayInput = {
   otHours: number;
   baseRate: number;
   taxRate: number;
+  otRate?: number;
   isManual: boolean;
   totalPay: number;
 };
@@ -150,7 +151,7 @@ export async function saveCalculatedPayAction(input: SaveCalculatedPayInput): Pr
   const payload = {
     base_rate: toSafeNumber(input.baseRate),
     tax_rate: toSafeNumber(input.taxRate),
-    ot_rate: toSafeNumber(input.otRate), // เพิ่ม ot_rate ให้ตรงกับ Database
+    ot_rate: toSafeNumber(input.otRate ?? 0), // เพิ่ม ot_rate ให้ตรงกับ Database
     is_manual: Boolean(input.isManual),
     total_pay: toSafeNumber(input.totalPay),
   };
