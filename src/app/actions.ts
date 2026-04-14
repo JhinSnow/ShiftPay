@@ -93,85 +93,108 @@ export async function getShiftHistoryAction(): Promise<ActionResult<WorkLogItem[
   };
 }
 
+// ลบฟังก์ชัน saveLogShiftAction และ saveCalculatedPayAction เดิมทิ้ง แล้ววางโค้ดนี้แทน
+
 export async function saveLogShiftAction(input: SaveLogShiftInput): Promise<ActionResult> {
   const { supabase, user, errorMessage } = await getAuthenticatedUser();
-
   if (!user) {
+    console.error("AUTH ERROR: No user");
     return { success: false, message: errorMessage };
   }
 
-  if (!input.date) {
+  const safeDate = (input.date ?? "").trim();
+  if (!safeDate) {
     return { success: false, message: "กรุณาเลือกวันที่ทำงาน" };
   }
 
   const payload = {
     user_id: user.id,
-    date: input.date,
+    date: safeDate,
     hours_worked: toSafeNumber(input.hoursWorked),
     ot_hours: toSafeNumber(input.otHours),
-    base_rate: 0,
-    tax_rate: 0,
-    is_manual: false,
     total_pay: 0,
   };
 
-  const { error } = await supabase.from("work_logs").insert(payload);
+  try {
+    // ใช้ upsert เพื่อให้บันทึกวันเดิมแล้วไม่ออกมาเบิ้ล (ต้องอิงจาก unique constraint ที่เราสร้าง)
+    const { error } = await supabase.from("work_logs").upsert(payload, {
+      onConflict: 'user_id, date'
+    });
 
-  if (error) {
-    console.error(error);
-    return {
-      success: false,
-      message: "บันทึกชั่วโมงทำงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
-    };
+    if (error) {
+      console.error("SUPABASE ERROR (Log Shift):", error);
+      return { success: false, message: "บันทึกชั่วโมงทำงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" };
+    }
+  } catch (error) {
+    console.error("SUPABASE CATCH ERROR:", error);
+    return { success: false, message: "เกิดข้อผิดพลาดในการบันทึกข้อมูล" };
   }
 
   revalidatePath("/log-shift");
   revalidatePath("/calculate-pay");
-  revalidatePath("/");
-
-  return {
-    success: true,
-    message: "บันทึกเวลาทำงานเรียบร้อยแล้ว",
-  };
+  
+  return { success: true, message: "บันทึกเวลาทำงานเรียบร้อยแล้ว" };
 }
 
 export async function saveCalculatedPayAction(input: SaveCalculatedPayInput): Promise<ActionResult> {
   const { supabase, user, errorMessage } = await getAuthenticatedUser();
-
   if (!user) {
     return { success: false, message: errorMessage };
   }
 
-  if (!input.date) {
+  const safeDate = (input.date ?? "").trim();
+  if (!safeDate) {
     return { success: false, message: "ไม่พบวันที่ของชั่วโมงที่เลือก" };
   }
 
   const payload = {
-    user_id: user.id,
-    date: input.date,
-    hours_worked: toSafeNumber(input.hoursWorked),
-    ot_hours: toSafeNumber(input.otHours),
     base_rate: toSafeNumber(input.baseRate),
     tax_rate: toSafeNumber(input.taxRate),
-    is_manual: input.isManual,
+    ot_rate: toSafeNumber(input.otRate), // เพิ่ม ot_rate ให้ตรงกับ Database
+    is_manual: Boolean(input.isManual),
     total_pay: toSafeNumber(input.totalPay),
   };
 
-  const { error } = await supabase.from("work_logs").insert(payload);
+  try {
+    // ใช้ UPDATE เพื่อแก้ไขเงินเข้าไปในบรรทัดเดิมที่มีชั่วโมงอยู่แล้ว
+    const { error } = await supabase
+      .from("work_logs")
+      .update(payload)
+      .eq('user_id', user.id)
+      .eq('date', safeDate);
 
-  if (error) {
-    console.error(error);
-    return {
-      success: false,
-      message: "บันทึกผลคำนวณไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
-    };
+    if (error) {
+      console.error("SUPABASE ERROR (Calc Pay):", error);
+      return { success: false, message: "บันทึกผลคำนวณไม่สำเร็จ กรุณาลองใหม่อีกครั้ง" };
+    }
+  } catch (error) {
+    console.error("SUPABASE CATCH ERROR:", error);
+    return { success: false, message: "เกิดข้อผิดพลาดในการบันทึกผลคำนวณ" };
   }
 
+  revalidatePath("/log-shift");
   revalidatePath("/calculate-pay");
-  revalidatePath("/");
 
-  return {
-    success: true,
-    message: "บันทึกผลคำนวณเรียบร้อยแล้ว",
-  };
+  return { success: true, message: "บันทึกผลคำนวณเรียบร้อยแล้ว" };
+}
+
+export async function deleteLogAction(id: number): Promise<ActionResult> {
+  const { supabase, user } = await getAuthenticatedUser();
+  if (!user) return { success: false, message: "กรุณาเข้าสู่ระบบ" };
+
+  try {
+    const { error } = await supabase
+      .from("work_logs")
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id); // ปลอดภัยไว้ก่อน ต้องเป็นเจ้าของเท่านั้นที่ลบได้
+
+    if (error) throw error;
+    
+    revalidatePath("/log-shift");
+    revalidatePath("/calculate-pay");
+    return { success: true, message: "ลบข้อมูลเรียบร้อยแล้ว" };
+  } catch (error) {
+    return { success: false, message: "ไม่สามารถลบข้อมูลได้" };
+  }
 }

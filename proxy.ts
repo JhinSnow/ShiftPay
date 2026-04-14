@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { supabase, response } = await updateSession(request);
   const {
     data: { user },
@@ -9,9 +9,14 @@ export async function middleware(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isLoginRoute = path === "/login";
+  const isRegisterRoute = path === "/register";
   const isRootDashboardRoute = path === "/";
   const isDashboardRoute = path.startsWith("/dashboard");
-  const isProtectedRoute = isRootDashboardRoute || isDashboardRoute;
+  const isLogShiftRoute = path.startsWith("/log-shift");
+  const isCalculateRoute = path.startsWith("/calculate");
+  const isCalculatePayRoute = path.startsWith("/calculate-pay");
+  const isProtectedRoute =
+    isRootDashboardRoute || isDashboardRoute || isLogShiftRoute || isCalculateRoute || isCalculatePayRoute;
 
   if (isProtectedRoute && !user) {
     const redirectUrl = request.nextUrl.clone();
@@ -19,7 +24,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  if (isLoginRoute && user) {
+  if ((isLoginRoute || isRegisterRoute) && user) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/";
     return NextResponse.redirect(redirectUrl);
@@ -30,4 +35,4 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
-}
+};
