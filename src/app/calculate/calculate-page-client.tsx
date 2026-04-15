@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+// 1. เพิ่ม useEffect เข้ามาตรงนี้
+import { useMemo, useState, useTransition, useEffect } from "react";
 import { Calendar, Clock3, Wallet } from "lucide-react";
 import { getShiftHistoryAction, saveCalculatedPayAction, type WorkLogItem } from "@/src/app/actions";
+import { getWorkLogByDateAction } from "@/src/app/actions";
 
 function toSafeNumber(value: string) {
   const parsed = Number.parseFloat(value);
@@ -54,6 +56,25 @@ export default function CalculatePageClient() {
 
   const finalTotal = manualOverride ? manualTotalValue : calculated.net;
 
+  // 2. เพิ่มระบบดึงข้อมูลอัตโนมัติเมื่อเลือกวันที่
+  useEffect(() => {
+    async function fetchLoggedHours() {
+      if (date) {
+        const loggedData = await getWorkLogByDateAction(date);
+        if (loggedData) {
+          setHoursWorked(String(loggedData.hours_worked));
+          setOtHours(String(loggedData.ot_hours));
+          setFeedback(""); // เคลียร์ข้อความแจ้งเตือนถ้าเจอข้อมูล
+        } else {
+          setHoursWorked("0");
+          setOtHours("0");
+          setFeedback("ไม่พบชั่วโมงทำงานในวันที่เลือก กรุณาบันทึกกะก่อน"); // แจ้งเตือนถ้าไม่เจอ
+        }
+      }
+    }
+    fetchLoggedHours();
+  }, [date]);
+
   const loadHistory = () => {
     setFeedback("");
     startRefreshing(async () => {
@@ -68,13 +89,12 @@ export default function CalculatePageClient() {
 
   const applyRecord = (record: WorkLogItem) => {
     setDate(record.date);
-    setHoursWorked(String(record.hours_worked));
-    setOtHours(String(record.ot_hours));
+    // ไม่ต้อง set ชั่วโมงตรงนี้แล้ว เพราะเดี๋ยว useEffect ข้างบนจะจัดการดึงให้เองเมื่อ date เปลี่ยน
   };
 
   const saveCalculation = () => {
     if (!date) {
-      setFeedback("กรุณาดึงชั่วโมงที่บันทึกไว้ก่อนคำนวณเงิน");
+      setFeedback("กรุณาเลือกวันที่ต้องการคำนวณเงิน");
       return;
     }
     
@@ -102,28 +122,27 @@ export default function CalculatePageClient() {
         <div className="rounded-3xl bg-white p-6 shadow-lg shadow-black/5">
           <p className="text-sm font-medium text-emerald-600">ShiftPay</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-zinc-900">คำนวณค่าแรง</h1>
-          <p className="mt-2 text-sm text-zinc-600">ดึงชั่วโมงที่บันทึกไว้ แล้วคำนวณค่าแรงพร้อมภาษี</p>
+          <p className="mt-2 text-sm text-zinc-600">เลือกวันที่ เพื่อดึงชั่วโมงอัตโนมัติ และคำนวณค่าแรง</p>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <label className="block">
               <span className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-700">
                 <Calendar className="h-4 w-4 text-emerald-600" />
-                วันที่ (ดึงจากประวัติ)
+                วันที่
               </span>
-              {/* ล็อคช่องวันที่ */}
+              {/* 3. ปลดล็อค input วันที่ให้กดเลือกได้ และใส่ onChange */}
               <input
                 type="date"
                 value={date}
-                readOnly
-                className="w-full rounded-2xl border border-zinc-200 bg-zinc-100 text-zinc-500 cursor-not-allowed px-4 py-3 outline-none"
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 outline-none focus:border-emerald-500 transition"
               />
             </label>
             <label className="block">
               <span className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-700">
                 <Clock3 className="h-4 w-4 text-emerald-600" />
-                ชั่วโมงปกติ
+                ชั่วโมงปกติ (ดึงอัตโนมัติ)
               </span>
-              {/* ล็อคช่องชั่วโมง */}
               <input
                 type="number"
                 value={hoursWorked}
@@ -134,9 +153,8 @@ export default function CalculatePageClient() {
             <label className="block">
               <span className="mb-2 flex items-center gap-2 text-sm font-medium text-zinc-700">
                 <Clock3 className="h-4 w-4 text-emerald-600" />
-                ชั่วโมง OT
+                ชั่วโมง OT (ดึงอัตโนมัติ)
               </span>
-              {/* ล็อคช่อง OT */}
               <input
                 type="number"
                 value={otHours}
@@ -216,7 +234,7 @@ export default function CalculatePageClient() {
                 className={`w-full rounded-2xl border px-4 py-3 outline-none ${
                   manualOverride
                     ? "border-amber-300 bg-amber-50 focus:border-amber-500"
-                    : "border-zinc-200 bg-zinc-100 text-zinc-500"
+                    : "border-zinc-200 bg-zinc-100 text-zinc-500 cursor-not-allowed"
                 }`}
               />
             </label>
@@ -231,28 +249,28 @@ export default function CalculatePageClient() {
               type="button"
               onClick={loadHistory}
               disabled={isRefreshing}
-              className="rounded-2xl border border-zinc-300 bg-white px-5 py-3 text-sm font-semibold text-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-2xl border border-zinc-300 bg-white px-5 py-3 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 transition disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isRefreshing ? "กำลังโหลด..." : "ดึงชั่วโมงที่บันทึกไว้"}
+              {isRefreshing ? "กำลังโหลด..." : "ดึงประวัติล่าสุด"}
             </button>
             <button
               type="button"
               onClick={saveCalculation}
               disabled={isSaving || !date}
-              className="rounded-2xl bg-zinc-900 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-2xl bg-zinc-900 px-5 py-3 text-sm font-semibold text-white hover:bg-zinc-800 transition disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSaving ? "กำลังบันทึก..." : "บันทึกผลคำนวณ"}
             </button>
             <Link
               href="/log-shift"
-              className="rounded-2xl border border-zinc-300 bg-white px-5 py-3 text-center text-sm font-semibold text-zinc-800"
+              className="rounded-2xl border border-zinc-300 bg-white px-5 py-3 text-center text-sm font-semibold text-zinc-800 hover:bg-zinc-50 transition"
             >
               ไปหน้าบันทึกชั่วโมง
             </Link>
           </div>
         </div>
 
-        <aside className="rounded-3xl bg-zinc-900 p-6 text-white shadow-lg shadow-black/10">
+        <aside className="rounded-3xl bg-zinc-900 p-6 text-white shadow-lg shadow-black/10 h-fit sticky top-24">
           <p className="text-sm text-emerald-300">สรุปการคำนวณ</p>
           <p className="mt-3 text-4xl font-black tracking-tight">{formatTHB(finalTotal)}</p>
           <div className="mt-6 space-y-3 text-sm text-zinc-300">
@@ -272,9 +290,10 @@ export default function CalculatePageClient() {
         </aside>
       </section>
 
+      {/* ส่วนตารางประวัติเหมือนเดิมเป๊ะครับ... */}
       <section className="mt-8 rounded-3xl bg-white p-6 shadow-lg shadow-black/5">
         <h2 className="text-xl font-bold text-zinc-900">ประวัติ 10 รายการล่าสุด</h2>
-        <p className="mt-1 text-sm text-zinc-600">กดปุ่มดึงชั่วโมงที่บันทึกไว้ เพื่อโหลดข้อมูลล่าสุดจาก work_logs</p>
+        <p className="mt-1 text-sm text-zinc-600">กดปุ่มดึงประวัติล่าสุด เพื่ออัปเดตข้อมูลจากฐานข้อมูล</p>
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full divide-y divide-zinc-200 text-sm">
             <thead>

@@ -231,3 +231,18 @@ export async function getUserDataAction(): Promise<{ email: string; username: st
     username: profile?.username || user.user_metadata?.username || "User",
   };
 }
+
+export async function getWorkLogByDateAction(date: string) {
+  const { supabase, user } = await getAuthenticatedUser();
+  if (!user || !date) return null;
+
+  const { data, error } = await supabase
+    .from("work_logs")
+    .select("hours_worked, ot_hours")
+    .eq("user_id", user.id)
+    .eq("date", date)
+    .single();
+
+  if (error) return null;
+  return data;
+}
