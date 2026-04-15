@@ -199,3 +199,35 @@ export async function deleteLogAction(id: number): Promise<ActionResult> {
     return { success: false, message: "ไม่สามารถลบข้อมูลได้" };
   }
 }
+
+// ดึง Email ของคนที่ล็อกอินอยู่
+export async function getUserEmailAction() {
+  const { user } = await getAuthenticatedUser();
+  return user?.email || null;
+}
+
+// สั่งล้างข้อมูลล็อกอิน
+export async function logoutAction() {
+  const { supabase } = await getAuthenticatedUser();
+  await supabase.auth.signOut();
+  return { success: true };
+}
+
+// ฟังก์ชันดึงข้อมูลผู้ใช้แบบเต็ม (Email + Username จากตาราง Profiles)
+export async function getUserDataAction(): Promise<{ email: string; username: string } | null> {
+  const { supabase, user } = await getAuthenticatedUser();
+  if (!user) return null;
+
+  // 1. ดึงข้อมูล username จากตาราง profiles โดยใช้ id ของ user
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("username")
+    .eq("id", user.id)
+    .single();
+
+  return {
+    email: user.email ?? "",
+    // ถ้าหาใน profiles ไม่เจอ ให้ดึงจาก metadata สำรองไว้ หรือใช้คำว่า User
+    username: profile?.username || user.user_metadata?.username || "User",
+  };
+}
